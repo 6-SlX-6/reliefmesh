@@ -13,6 +13,9 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
+    # Code scanning on private repositories requires GitHub Advanced Security.
+    # Set the repository variable ENABLE_ADVANCED_SECURITY=true once it is enabled.
+    if: github.event.repository.visibility == 'public' || vars.ENABLE_ADVANCED_SECURITY == 'true'
     runs-on: ubuntu-latest
     permissions:
       security-events: write
