@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { DELIVERY_MODES, type CategoryCode, type ContactInput, type DeliveryMode, type LocationInput, type Offer, type OfferCreateInput } from '@reliefmesh/shared-types'
-import { getDB } from '~/utils/offline-db'
+import { getDB, storePlaceholder } from '~/utils/offline-db'
 
 const emit = defineEmits<{ done: [path: string] }>()
 const auth = useAuthStore()
@@ -51,7 +51,7 @@ async function submit(publish = true) {
       emit('done', `/offers/${o.id}`)
     } else if (res.status === 'queued') {
       const p = offerPlaceholder(input, input.client_id!, auth.user!)
-      await getDB().offers.put({ id: p.id, user_id: auth.user!.id, client_id: input.client_id, pending: true, data: p, cached_at: new Date().toISOString() })
+      await storePlaceholder(getDB(), 'offers', auth.user!.id, input.client_id!, p)
       toasts.info('Offer saved on this device. It will be sent when the connection returns.')
       emit('done', `/offers/${p.id}`)
     } else {

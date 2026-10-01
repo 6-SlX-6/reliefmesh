@@ -52,4 +52,8 @@ for (const required of ['index.html', 'sw.js', 'manifest.webmanifest']) {
     process.exit(1)
   }
 }
+if (!readFileSync(new URL('sw.js', pub), 'utf8').includes('"url":"index.html"')) {
+  console.error('postbuild: index.html is not precached by the service worker; the app would not start offline')
+  process.exit(1)
+}
 console.log(`postbuild: CSP written with ${hashes.size} inline script hash(es)`)

@@ -19,7 +19,7 @@ beforeEach(async () => {
   userId = 'user-1'
   push = vi.fn()
   pull = vi.fn()
-  engine = new SyncEngine({ db, api: { sync: { push, pull } }, getUserId: () => userId })
+  engine = new SyncEngine({ db, api: { sync: { push: push as never, pull: pull as never } }, getUserId: () => userId })
 })
 
 describe('SyncEngine', () => {

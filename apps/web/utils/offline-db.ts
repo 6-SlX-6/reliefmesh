@@ -91,7 +91,8 @@ export async function cacheEntities<K extends EntityKind>(db: ReliefMeshDB, kind
   if (!items.length) return
   const now = new Date().toISOString()
   const table = db[kind] as unknown as Table<CachedEntity<EntityOf<K>>, string>
-  await table.bulkPut(items.map((data) => ({
+  const plain = JSON.parse(JSON.stringify(items)) as EntityOf<K>[]
+  await table.bulkPut(plain.map((data) => ({
     id: (data as { id: string }).id,
     user_id: userId,
     client_id: (data as { client_id?: string }).client_id,
@@ -126,7 +127,8 @@ export async function getMeta<T>(db: ReliefMeshDB, key: string): Promise<T | und
 }
 
 export async function setMeta(db: ReliefMeshDB, key: string, value: unknown): Promise<void> {
-  await db.meta.put({ key, value })
+  // Values often come from reactive store state; store a plain copy.
+  await db.meta.put({ key, value: value === undefined ? undefined : JSON.parse(JSON.stringify(value)) })
 }
 
 export interface CachedSession {
@@ -155,5 +157,18 @@ export async function clearCaches(db: ReliefMeshDB): Promise<void> {
     const keep = [metaKeys.publicNotice, metaKeys.settings]
     const keys = (await db.meta.toCollection().primaryKeys()).filter((k) => !keep.includes(k))
     await db.meta.bulkDelete(keys)
+  })
+}
+
+/** Stores a local placeholder for a record created offline. */
+export async function storePlaceholder<K extends 'requests' | 'offers'>(db: ReliefMeshDB, kind: K, userId: string, clientId: string, data: EntityOf<K>): Promise<void> {
+  const table = db[kind] as unknown as Table<CachedEntity<EntityOf<K>>, string>
+  await table.put({
+    id: `local:${clientId}`,
+    user_id: userId,
+    client_id: clientId,
+    pending: true,
+    data: JSON.parse(JSON.stringify(data)),
+    cached_at: new Date().toISOString(),
   })
 }

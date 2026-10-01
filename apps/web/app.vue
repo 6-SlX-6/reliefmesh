@@ -26,7 +26,7 @@ watch(
 // Move focus to the main heading after navigation so screen reader and
 // keyboard users know the page changed.
 watch(
-  () => route.fullPath,
+  () => route.path,
   async () => {
     await nextTick()
     const h1 = document.querySelector<HTMLElement>('main h1')

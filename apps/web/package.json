@@ -19,9 +19,11 @@
     "@reliefmesh/shared-types": "workspace:*",
     "@reliefmesh/ui-tokens": "workspace:*",
     "dexie": "^4.4.6",
-    "pinia": "^3.0.4"
+    "pinia": "^3.0.4",
+    "vue": "^3.5.43"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@nuxtjs/tailwindcss": "^6.14.0",
     "@pinia/nuxt": "^0.11.3",
     "@playwright/test": "1.56.1",
@@ -37,6 +39,8 @@
     "nuxt": "^3.21.11",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.71.0",
+    "unplugin-auto-import": "^21.1.0",
+    "unplugin-vue-components": "^32.1.0",
     "vitest": "^4.1.11",
     "vue-tsc": "^3.3.11",
     "workbox-core": "^7.4.1",

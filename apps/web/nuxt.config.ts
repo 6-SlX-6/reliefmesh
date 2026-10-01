@@ -6,6 +6,10 @@
 // - The service worker precaches the app shell only. API responses are never
 //   cached by the service worker; the app keeps a deliberate, privacy-aware
 //   offline cache in IndexedDB instead (see utils/offline-db.ts).
+// The service worker is built before `nuxt generate` writes the HTML shell,
+// so the shell is added to the precache explicitly with a per-build revision.
+const buildRevision = process.env.RELIEFMESH_BUILD_REVISION ?? Date.now().toString(36)
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-01',
   ssr: false,
@@ -65,6 +69,7 @@ export default defineNuxtConfig({
     injectManifest: {
       globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,json}'],
       globIgnores: ['**/_payload.json'],
+      additionalManifestEntries: [{ url: 'index.html', revision: buildRevision }],
     },
     client: { installPrompt: false, periodicSyncForUpdates: 3600 },
     devOptions: { enabled: false, type: 'module' },

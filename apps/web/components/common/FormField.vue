@@ -7,6 +7,7 @@ const props = withDefaults(defineProps<{ label: string; help?: string; error?: s
 const fieldId = props.id ?? `f-${Math.random().toString(36).slice(2, 9)}`
 const helpId = `${fieldId}-help`
 const errorId = `${fieldId}-error`
+const invalid = computed<'true' | undefined>(() => (props.error ? 'true' : undefined))
 const describedBy = computed(() => [props.help ? helpId : '', props.error ? errorId : ''].filter(Boolean).join(' ') || undefined)
 </script>
 
@@ -17,7 +18,7 @@ const describedBy = computed(() => [props.help ? helpId : '', props.error ? erro
       <span v-if="required" class="text-danger" aria-hidden="true">*</span>
       <span v-if="required" class="sr-only">(required)</span>
     </label>
-    <slot :id="fieldId" :described-by="describedBy" :invalid="error ? 'true' : undefined" />
+    <slot :id="fieldId" :described-by="describedBy" :invalid="invalid" />
     <p v-if="help" :id="helpId" class="field-help">{{ help }}</p>
     <p v-if="error" :id="errorId" class="field-error" role="alert">{{ error }}</p>
   </div>

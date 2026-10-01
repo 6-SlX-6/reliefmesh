@@ -93,7 +93,9 @@ export class SyncEngine {
       type: input.type,
       entity_id: input.entity_id,
       entity_client_id: input.entity_client_id,
-      payload: input.payload,
+      // Payloads may contain reactive proxies from forms; IndexedDB needs
+      // plain, structured-cloneable data. Payloads are JSON by definition.
+      payload: JSON.parse(JSON.stringify(input.payload ?? null)),
       created_at: new Date().toISOString(),
       state: 'pending',
       attempts: 0,

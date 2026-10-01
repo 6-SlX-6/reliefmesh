@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AidRequest, CategoryCode, ContactInput, LocationInput, RequestCreateInput, Urgency } from '@reliefmesh/shared-types'
 import { MEDICINE_PICKUP } from '@reliefmesh/shared-types'
-import { cacheEntities, getDB } from '~/utils/offline-db'
+import { cacheEntities, getDB, storePlaceholder } from '~/utils/offline-db'
 
 const emit = defineEmits<{ done: [path: string] }>()
 const auth = useAuthStore()
@@ -96,7 +96,7 @@ async function send(ack: boolean) {
       emit('done', `/requests/${v.id}`)
     } else if (res.status === 'queued') {
       const placeholder = requestPlaceholder(input, input.client_id!, auth.user!, settings.approxDecimals)
-      await getDB().requests.put({ id: placeholder.id, user_id: auth.user!.id, client_id: input.client_id, pending: true, data: placeholder, cached_at: new Date().toISOString() })
+      await storePlaceholder(getDB(), 'requests', auth.user!.id, input.client_id!, placeholder)
       toasts.info('Saved on this device. It will be sent automatically when the connection returns.')
       emit('done', `/requests/${placeholder.id}`)
     } else {
