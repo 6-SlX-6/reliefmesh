@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use ReliefMesh in training material or research, please cite it as below."
+type: software
+title: "ReliefMesh"
+abstract: >-
+  ReliefMesh is an open-source, self-hosted and offline-first web application
+  for coordinating aid requests, volunteer offers and assignments during
+  disaster-response exercises and local community aid. It provides role-based
+  access control, field-level encryption of personal data, an append-only
+  hash-chained audit log and an offline outbox with idempotent synchronization.
+  ReliefMesh is not an emergency dispatch service.
+authors:
+  - alias: "6-SlX-6"
+repository-code: "https://github.com/6-SlX-6/reliefmesh"
+url: "https://github.com/6-SlX-6/reliefmesh"
+license: Apache-2.0
+version: 0.1.0
+date-released: "2026-10-01"
+keywords:
+  - disaster response
+  - disaster preparedness
+  - emergency management exercises
+  - community aid
+  - mutual aid
+  - volunteer coordination
+  - humanitarian logistics
+  - offline-first
+  - progressive web app
+  - self-hosted
+  - privacy by design
+  - audit log
