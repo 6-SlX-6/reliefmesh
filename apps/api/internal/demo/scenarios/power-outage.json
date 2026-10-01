@@ -1,0 +1,17 @@
+{
+  "name": "power-outage",
+  "title": "Power outage exercise - Northern villages",
+  "description": "Fictional exercise: a multi-day power outage affects three villages. A community centre with a generator acts as a warming and charging point. All data is invented.",
+  "requests": [
+    {"key": "warming", "category": "shelter", "urgency": "high", "title": "Warming space for elderly residents", "description": "Residents without heating need a warm place during the day.", "people": 20, "area": "Northfield community centre", "status": "verified", "by": "coordinator"},
+    {"key": "charge", "category": "power_charging", "urgency": "normal", "title": "Charging for medical devices batteries (logistics)", "description": "Residents ask for charging slots for device batteries. No medical details recorded.", "people": 6, "area": "Northfield", "status": "submitted", "by": "requester1", "sensitive": true},
+    {"key": "water", "category": "drinking_water", "urgency": "high", "title": "Water for households with electric pumps", "description": "Wells with electric pumps are not working.", "people": 35, "quantity": 200, "unit": "litres", "area": "Eastbrook village", "requested_by_hours": 8, "status": "verified", "by": "requester2"},
+    {"key": "checkin", "category": "volunteer_support", "urgency": "normal", "title": "Door-to-door check-in visits (non-medical)", "description": "Volunteers to visit registered households and note supply needs.", "people": 50, "area": "Westmoor village", "status": "submitted", "by": "coordinator"},
+    {"key": "food", "category": "food", "urgency": "normal", "title": "Non-perishable food packages", "description": "Households cannot cook without power.", "people": 40, "quantity": 15, "unit": "packages", "area": "Eastbrook village", "status": "submitted", "by": "requester1"}
+  ],
+  "offers": [
+    {"key": "generator", "category": "power_charging", "title": "Generator-powered charging point", "description": "Charging station with 30 sockets at community centre.", "quantity": 30, "unit": "sockets", "mode": "on_site", "area": "Northfield community centre", "by": "manager"},
+    {"key": "tank", "category": "drinking_water", "title": "Water tank trailer", "description": "1000 l potable water trailer.", "quantity": 1000, "unit": "litres", "mode": "delivery", "area": "Northfield", "by": "volunteer3"},
+    {"key": "foodbank", "category": "food", "title": "Food bank packages", "description": "Non-perishable family packages.", "quantity": 40, "unit": "packages", "mode": "pickup", "area": "Town food bank", "exact": {"address": "Station Street 7 (fictional)"}, "by": "volunteer2"}
+  ]
+}

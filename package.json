@@ -1,0 +1,19 @@
+{
+  "name": "reliefmesh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline-first, privacy-preserving coordination for local disaster-response exercises and community aid.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.18"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @reliefmesh/web dev",
+    "build:web": "pnpm --filter @reliefmesh/web build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "test:e2e": "pnpm --filter @reliefmesh/web test:e2e"
+  },
+  "packageManager": "pnpm@10.28.0"
+}

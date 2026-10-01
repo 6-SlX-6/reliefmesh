@@ -1,0 +1,102 @@
+# ReliefMesh - production deployment
+#
+#   cp .env.example .env    # then fill in all values (see docs/deployment.md)
+#   docker compose -f docker-compose.yml up -d
+#   ../scripts/bootstrap-admin.sh
+#
+# Only the Caddy reverse proxy is exposed. PostgreSQL and the API are on an
+# internal network; Caddy obtains TLS certificates automatically.
+name: reliefmesh
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: reliefmesh
+      POSTGRES_USER: reliefmesh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reliefmesh -d reliefmesh"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+    shm_size: 128mb
+
+  api:
+    image: ghcr.io/6-slx-6/reliefmesh-api:${RELIEFMESH_VERSION:-0.1.0}
+    build:
+      context: ../../apps/api
+      args:
+        VERSION: ${RELIEFMESH_VERSION:-0.1.0}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      RELIEFMESH_ENV: production
+      RELIEFMESH_DATABASE_URL: postgres://reliefmesh:${POSTGRES_PASSWORD}@db:5432/reliefmesh?sslmode=disable
+      RELIEFMESH_PUBLIC_ORIGIN: https://${RELIEFMESH_DOMAIN:?set RELIEFMESH_DOMAIN in .env}
+      RELIEFMESH_SECRET_KEY: ${RELIEFMESH_SECRET_KEY:?set RELIEFMESH_SECRET_KEY in .env}
+      RELIEFMESH_DATA_ENCRYPTION_KEYS: ${RELIEFMESH_DATA_ENCRYPTION_KEYS:?set RELIEFMESH_DATA_ENCRYPTION_KEYS in .env}
+      RELIEFMESH_TRUSTED_PROXIES: 172.31.250.0/24
+      RELIEFMESH_ALLOW_DEMO_SEED: "false"
+      RELIEFMESH_LOG_LEVEL: ${RELIEFMESH_LOG_LEVEL:-info}
+    networks: [backend, frontend]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  web:
+    image: ghcr.io/6-slx-6/reliefmesh-web:${RELIEFMESH_VERSION:-0.1.0}
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    networks: [frontend]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [api, web]
+    environment:
+      RELIEFMESH_DOMAIN: ${RELIEFMESH_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      frontend:
+        ipv4_address: 172.31.250.10
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+
+networks:
+  backend:
+    internal: true
+  frontend:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:

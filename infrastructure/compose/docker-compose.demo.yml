@@ -1,0 +1,77 @@
+# ReliefMesh - local exercise demo on http://localhost:8080
+#
+#   docker compose -f docker-compose.demo.yml up -d --build
+#
+# Loads the fictional "flood" exercise scenario with demo accounts that share
+# the public password "reliefmesh-demo-exercise". FOR TRAINING ONLY - never
+# enter real personal data into a demo instance.
+name: reliefmesh-demo
+
+x-api-env: &api-env
+  RELIEFMESH_ENV: development
+  RELIEFMESH_DATABASE_URL: postgres://reliefmesh:reliefmesh-demo@db:5432/reliefmesh?sslmode=disable
+  RELIEFMESH_PUBLIC_ORIGIN: http://localhost:8080
+  RELIEFMESH_SECRET_KEY: demo-only-secret-key-not-for-production-0123456789
+  RELIEFMESH_DATA_ENCRYPTION_KEYS: demo:ZGVtby1vbmx5LWtleS1ub3QtZm9yLXByb2R1Y3Rpb24=
+  RELIEFMESH_ALLOW_DEMO_SEED: "true"
+  RELIEFMESH_TRUSTED_PROXIES: 172.31.251.0/24
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: reliefmesh
+      POSTGRES_USER: reliefmesh
+      POSTGRES_PASSWORD: reliefmesh-demo
+    volumes:
+      - demo_db_data:/var/lib/postgresql/data
+    networks: [demo]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reliefmesh -d reliefmesh"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: ../../apps/api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *api-env
+    networks: [demo]
+
+  demo-seed:
+    build:
+      context: ../../apps/api
+    depends_on:
+      api:
+        condition: service_healthy
+    environment: *api-env
+    command: ["seed-demo", "--scenario", "flood", "--if-not-seeded"]
+    restart: "no"
+    networks: [demo]
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    networks: [demo]
+
+  proxy:
+    image: caddy:2-alpine
+    depends_on: [api, web]
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ../caddy/Caddyfile.demo:/etc/caddy/Caddyfile:ro
+    networks: [demo]
+
+networks:
+  demo:
+    ipam:
+      config:
+        - subnet: 172.31.251.0/24
+
+volumes:
+  demo_db_data:

@@ -1,0 +1,22 @@
+{
+  "name": "@reliefmesh/ui-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Design tokens (colors, typography, spacing) for high-stress, high-contrast interfaces.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tailwind": "./src/tailwind-preset.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.11",
+    "typescript": "~5.9.3"
+  }
+}

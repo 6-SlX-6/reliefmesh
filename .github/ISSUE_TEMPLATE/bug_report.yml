@@ -1,0 +1,56 @@
+name: Bug report
+description: Something does not work as documented.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not include real personal data** (names, addresses, phone numbers, health information) in this report. Use the demo scenarios or invented data.
+        **Security problems must not be reported here** - see SECURITY.md.
+        ReliefMesh is not an emergency service. If someone is in danger, contact your local emergency services.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in as demo-coordinator
+        2. Open request ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Role(s) involved
+      multiple: true
+      options: [requester, volunteer, coordinator, organization_manager, admin, not applicable]
+  - type: dropdown
+    id: connectivity
+    attributes:
+      label: Connectivity
+      options: [online, offline, connection changed during the action, unknown]
+  - type: input
+    id: version
+    attributes:
+      label: ReliefMesh version or commit
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser / device / deployment
+      placeholder: "Firefox 140 on Android, Docker Compose on Debian 12"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: API logs contain no request bodies, but please check them for personal data before pasting.
+      render: text

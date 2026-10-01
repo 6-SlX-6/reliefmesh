@@ -1,0 +1,46 @@
+import { expect, test } from '@playwright/test'
+import { confirm, login, unique } from './helpers'
+
+test('admin creates a user with a one-time temporary password that must be changed', async ({ page, browser }) => {
+  await login(page, 'demo-admin')
+  await page.goto('/admin/users')
+  await page.getByTestId('create-user').click()
+  const username = unique('e2e').replace(/\s/g, '-').toLowerCase()
+  await page.getByTestId('new-username').fill(username)
+  await page.getByTestId('new-display-name').fill('E2E Volunteer')
+  await confirm(page)
+  const temp = (await page.getByTestId('temp-password-value').textContent())!.trim()
+  expect(temp).toMatch(/^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/)
+
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await p2.goto('/login')
+  await p2.getByTestId('login-username').fill(username)
+  await p2.getByTestId('login-password').fill(temp)
+  await p2.getByTestId('login-submit').click()
+  await expect(p2).toHaveURL(/\/change-password/)
+  await p2.getByTestId('current-password').fill(temp)
+  await p2.getByTestId('new-password').fill('a long and memorable passphrase')
+  await p2.getByTestId('repeat-password').fill('a long and memorable passphrase')
+  await p2.getByTestId('change-password-submit').click()
+  await expect(p2).toHaveURL(/\/assignments/)
+  await ctx.close()
+})
+
+test('audit log verifies as intact and settings change the emergency notice', async ({ page }) => {
+  await login(page, 'demo-admin')
+  await page.goto('/admin/audit')
+  await page.getByTestId('verify-audit').click()
+  await expect(page.getByTestId('verify-result')).toContainText('Audit log intact')
+
+  await page.goto('/admin/settings')
+  const field = page.getByTestId('setting-emergency-notice')
+  await expect(field).toHaveValue(/112/)
+  const original = await field.inputValue()
+  await field.fill('Emergency notice: In immediate danger call 112 or 110. ReliefMesh is not an emergency dispatch service.')
+  await page.getByTestId('save-settings').click()
+  await expect(page.getByTestId('emergency-notice').first()).toContainText('112 or 110')
+  await field.fill(original)
+  await page.getByTestId('save-settings').click()
+  await expect(page.getByTestId('emergency-notice').first()).not.toContainText('112 or 110')
+})

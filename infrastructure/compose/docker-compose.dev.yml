@@ -1,0 +1,50 @@
+# ReliefMesh - local development
+#
+#   docker compose -f docker-compose.dev.yml up -d db     # PostgreSQL only
+#   make api-run  &&  make web-dev                       # run API and web on the host
+#
+# or run the API in a container as well:
+#   docker compose -f docker-compose.dev.yml --profile api up -d
+#
+# Development secrets below are public and must never be used in production.
+name: reliefmesh-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: reliefmesh
+      POSTGRES_USER: reliefmesh
+      POSTGRES_PASSWORD: reliefmesh
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - dev_db_data:/var/lib/postgresql/data
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reliefmesh -d reliefmesh"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    profiles: [api]
+    build:
+      context: ../../apps/api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      RELIEFMESH_ENV: development
+      RELIEFMESH_DATABASE_URL: postgres://reliefmesh:reliefmesh@db:5432/reliefmesh?sslmode=disable
+      RELIEFMESH_PUBLIC_ORIGIN: http://localhost:3000
+      RELIEFMESH_EXTRA_ALLOWED_ORIGINS: http://localhost:8080
+      RELIEFMESH_SECRET_KEY: development-only-secret-key-change-me-0123456789
+      RELIEFMESH_DATA_ENCRYPTION_KEYS: dev:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      RELIEFMESH_ALLOW_DEMO_SEED: "true"
+      RELIEFMESH_LOG_LEVEL: debug
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  dev_db_data:

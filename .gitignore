@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+.output/
+.nuxt/
+.nitro/
+dist/
+apps/api/bin/
+/bin/
+coverage/
+*.coverprofile
+coverage.out
+
+# Test artifacts
+test-results/
+playwright-report/
+blob-report/
+apps/web/e2e/.auth/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+infrastructure/compose/.env
+infrastructure/compose/secrets/
+*.pem
+*.key
+!infrastructure/caddy/*.example
+
+# Backups
+backups/
+*.sql.gz
+*.dump
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.log
+docs/api-reference.html

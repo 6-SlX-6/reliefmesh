@@ -1,0 +1,13 @@
+# Example: local HTTPS for testing the PWA on phones in a training room.
+# Generate certificates with ../scripts/generate-dev-certs.sh and mount them
+# into the proxy container at /certs.
+reliefmesh.local {
+	tls /certs/reliefmesh.local.crt /certs/reliefmesh.local.key
+	@api path /api/* /healthz /readyz
+	handle @api {
+		reverse_proxy api:8080
+	}
+	handle {
+		reverse_proxy web:8080
+	}
+}
