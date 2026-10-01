@@ -1,0 +1,17 @@
+{
+  "name": "shelter",
+  "title": "Temporary shelter exercise - School gymnasium",
+  "description": "Fictional exercise: a school gymnasium is opened as a temporary shelter after an evacuation. All data is invented.",
+  "requests": [
+    {"key": "beds", "category": "shelter", "urgency": "high", "title": "Shelter places for 8 people tonight", "description": "Evacuated households need places for one night.", "people": 8, "quantity": 8, "unit": "places", "area": "West school gymnasium", "requested_by_hours": 5, "status": "verified", "by": "coordinator"},
+    {"key": "hygiene", "category": "hygiene", "urgency": "normal", "title": "Hygiene kits", "description": "Toothbrushes, soap, sanitary products for shelter residents.", "people": 30, "quantity": 30, "unit": "kits", "area": "West school gymnasium", "status": "submitted", "by": "requester1"},
+    {"key": "pets", "category": "pet_animal_support", "urgency": "low", "title": "Pet food and crates", "description": "Three dogs and two cats arrived with their owners.", "quantity": 5, "unit": "crates", "area": "West school gymnasium", "status": "submitted", "by": "requester2"},
+    {"key": "access", "category": "accessibility_support", "urgency": "normal", "title": "Accessible cot and step-free sleeping area", "description": "One resident needs a raised cot near the entrance.", "people": 1, "area": "West school gymnasium", "accessibility": "Step-free access required.", "status": "under_review", "by": "requester1", "sensitive": true},
+    {"key": "info", "category": "information", "urgency": "low", "title": "Printed information sheet on return times", "description": "Residents ask when they can return; need printed notice from organizers.", "people": 30, "area": "West school gymnasium", "status": "verified", "by": "coordinator"}
+  ],
+  "offers": [
+    {"key": "cots", "category": "shelter", "title": "Field cots from sports club", "description": "Folding cots with sleeping mats.", "quantity": 20, "unit": "places", "mode": "on_site", "area": "West school gymnasium", "by": "manager"},
+    {"key": "kits", "category": "hygiene", "title": "Hygiene kits from pharmacy donation", "description": "Pre-packed kits.", "quantity": 25, "unit": "kits", "mode": "pickup", "area": "Market square", "by": "volunteer1"},
+    {"key": "petfood", "category": "pet_animal_support", "title": "Pet food donation", "description": "Dry food for dogs and cats.", "quantity": 10, "unit": "bags", "mode": "delivery", "area": "Riverside", "by": "volunteer2"}
+  ]
+}

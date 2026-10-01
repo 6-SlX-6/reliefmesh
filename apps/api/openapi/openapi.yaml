@@ -1,0 +1,1313 @@
+openapi: 3.1.0
+info:
+  title: ReliefMesh API
+  version: 0.1.0
+  summary: Offline-first, privacy-preserving coordination for local disaster-response exercises and community aid.
+  description: |
+    REST API of a self-hosted ReliefMesh instance.
+
+    **ReliefMesh is not an emergency service.** For immediate danger to life, health, fire, crime or other
+    emergencies, contact the responsible local emergency services. Nothing in this API notifies authorities,
+    dispatches responders or performs medical triage.
+
+    ## Authentication
+    Sessions use an HTTP-only, `SameSite=Strict` cookie (`__Host-rm_session` over HTTPS, `rm_session` in local
+    development). Every state-changing request from an authenticated session must send the CSRF token returned by
+    `POST /auth/login` or `GET /auth/session` in the `X-CSRF-Token` header. Browsers must also send a matching
+    `Origin`.
+
+    ## Authorization
+    All authorization is enforced on the server. Records the caller may not see are reported as `404` so their
+    existence is not revealed. Every view contains a `permissions` object computed on the server.
+
+    ## Privacy
+    Protected values (contact details and exact locations) are never part of regular responses. They are only
+    returned by the `.../protected` endpoints, which record an audit event that is visible to the data subject.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: /
+    description: Same origin as the web app
+tags:
+  - name: health
+  - name: auth
+  - name: settings
+  - name: requests
+  - name: offers
+  - name: assignments
+  - name: notes
+  - name: volunteers
+  - name: dashboard
+  - name: exports
+  - name: sync
+  - name: admin
+security:
+  - session: []
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200": { description: Process is running, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe (database reachable and migrated)
+      security: []
+      responses:
+        "200": { description: Ready, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        "503": { description: Not ready }
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in with username and password
+      description: Rate limited per client IP. Accounts are locked for 15 minutes after 5 consecutive failures. Failure responses are deliberately generic.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              additionalProperties: false
+              properties:
+                username: { type: string, maxLength: 64 }
+                password: { type: string, maxLength: 128, format: password }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: End the current session
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Logged out }
+  /api/v1/auth/session:
+    get:
+      tags: [auth]
+      summary: Current session, user and CSRF token
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/auth/change-password:
+    post:
+      tags: [auth]
+      summary: Change own password (required after admin-created or reset accounts)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, minLength: 12, maxLength: 128, format: password }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/me:
+    get:
+      tags: [auth]
+      summary: Own profile
+      responses:
+        "200": { description: Profile, content: { application/json: { schema: { $ref: "#/components/schemas/Me" } } } }
+  /api/v1/me/availability:
+    patch:
+      tags: [volunteers]
+      summary: Set own volunteer availability
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { $ref: "#/components/requestBodies/Availability" }
+      responses:
+        "204": { description: Updated }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v1/public/notice:
+    get:
+      tags: [settings]
+      summary: Emergency notice and exercise banner (shown before login)
+      security: []
+      responses:
+        "200":
+          description: Public notice
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance_name: { type: string }
+                  emergency_notice: { type: string }
+                  exercise_mode: { type: boolean }
+                  exercise_label: { type: string }
+  /api/v1/settings:
+    get:
+      tags: [settings]
+      summary: Client settings and enabled categories
+      responses:
+        "200": { description: Settings, content: { application/json: { schema: { $ref: "#/components/schemas/ClientSettings" } } } }
+
+  /api/v1/requests:
+    get:
+      tags: [requests]
+      summary: List requests visible to the caller
+      description: Requesters see their own requests, volunteers those linked to their assignments, coordinators all requests of their organization. Administrators without a coordination role receive 403. Sensitive descriptions are omitted from list items.
+      parameters:
+        - { name: status, in: query, schema: { type: string }, description: Comma-separated statuses }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: urgency, in: query, schema: { $ref: "#/components/schemas/Urgency" } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: Search reference, title or area (coordinators) }
+        - { name: open, in: query, schema: { type: boolean } }
+        - { name: mine, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string, enum: [priority, newest, updated] } }
+        - { name: updated_since, in: query, schema: { type: string, format: date-time } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200": { description: Page of requests, content: { application/json: { schema: { $ref: "#/components/schemas/RequestList" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [requests]
+      summary: Create a request
+      description: |
+        Urgency is chosen by people, never by the system. Critical urgency requires `emergency_notice_acknowledged: true`.
+        For `medicine_pickup`, the title is replaced by a generic logistics title and free-text descriptions are rejected unless enabled by the administrator.
+        Sending the same `client_id` again returns the existing request with status 200.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RequestCreate" } } }
+      responses:
+        "201": { $ref: "#/components/responses/Request" }
+        "200": { $ref: "#/components/responses/Request" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/requests/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [requests]
+      summary: Get a request (role-specific projection)
+      responses:
+        "200": { $ref: "#/components/responses/Request" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [requests]
+      summary: Update a request
+      description: Owners may edit content until review starts. Coordinators may edit open requests including review, verification, team, expiry and tags. Send `version` for optimistic concurrency.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RequestUpdate" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Request" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/requests/{id}/status:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [requests]
+      summary: Change the lifecycle status
+      description: |
+        Only coordinators may set verified, assigned, resolved, cancelled, duplicate or expired. Assigned volunteers may set in_progress.
+        Owners may submit their drafts. `cancelled` requires a reason, `resolved` a resolution summary, `duplicate` the canonical reference.
+        Closing a request with active assignments requires `cancel_active_assignments: true`.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RequestStatusChange" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Request" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/requests/{id}/reopen:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [requests]
+      summary: Reopen a closed request (coordinators, reason required)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { $ref: "#/components/requestBodies/Reason" }
+      responses:
+        "200": { $ref: "#/components/responses/Request" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/requests/{id}/protected:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [requests]
+      summary: Reveal protected contact details and exact location (audited)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "200": { description: Decrypted protected values. Do not persist., content: { application/json: { schema: { $ref: "#/components/schemas/RequestProtected" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/requests/{id}/events:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [requests]
+      summary: Immutable event timeline (filtered per role)
+      responses:
+        "200": { description: Timeline, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/TimelineEvent" } } } } } } }
+  /api/v1/requests/{id}/notes:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [notes]
+      summary: List notes visible to the caller
+      responses:
+        "200": { $ref: "#/components/responses/NoteList" }
+    post:
+      tags: [notes]
+      summary: Add an append-only note
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { $ref: "#/components/requestBodies/Note" }
+      responses:
+        "201": { $ref: "#/components/responses/Note" }
+        "200": { $ref: "#/components/responses/Note" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v1/offers:
+    get:
+      tags: [offers]
+      summary: List offers visible to the caller
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: allocatable, in: query, schema: { type: boolean } }
+        - { name: updated_since, in: query, schema: { type: string, format: date-time } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200": { description: Page of offers, content: { application/json: { schema: { $ref: "#/components/schemas/OfferList" } } } }
+    post:
+      tags: [offers]
+      summary: Create an offer
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OfferCreate" } } }
+      responses:
+        "201": { $ref: "#/components/responses/Offer" }
+        "200": { $ref: "#/components/responses/Offer" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/offers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [offers]
+      summary: Get an offer
+      responses:
+        "200": { $ref: "#/components/responses/Offer" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [offers]
+      summary: Update an offer (quantity can never drop below the allocated amount)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OfferUpdate" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Offer" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/offers/{id}/status:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [offers]
+      summary: Change offer status (allocation statuses are derived and cannot be set)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { $ref: "#/components/schemas/OfferStatus" }
+                reason: { type: string, maxLength: 1000 }
+                version: { type: integer }
+      responses:
+        "200": { $ref: "#/components/responses/Offer" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/offers/{id}/protected:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [offers]
+      summary: Reveal protected offer details (audited)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "200": { description: Decrypted values, content: { application/json: { schema: { $ref: "#/components/schemas/RequestProtected" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/offers/{id}/events:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [offers]
+      summary: Offer event history
+      responses:
+        "200": { description: Events, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } } } } } } }
+  /api/v1/offers/{id}/notes:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [notes]
+      summary: List offer notes
+      responses:
+        "200": { $ref: "#/components/responses/NoteList" }
+    post:
+      tags: [notes]
+      summary: Add an offer note
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { $ref: "#/components/requestBodies/Note" }
+      responses:
+        "201": { $ref: "#/components/responses/Note" }
+        "200": { $ref: "#/components/responses/Note" }
+
+  /api/v1/assignments:
+    get:
+      tags: [assignments]
+      summary: List assignments (volunteers only ever see their own)
+      parameters:
+        - { name: request_id, in: query, schema: { type: string, format: uuid } }
+        - { name: offer_id, in: query, schema: { type: string, format: uuid } }
+        - { name: volunteer_user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: mine, in: query, schema: { type: boolean } }
+        - { name: updated_since, in: query, schema: { type: string, format: date-time } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200": { description: Page of assignments, content: { application/json: { schema: { $ref: "#/components/schemas/AssignmentList" } } } }
+    post:
+      tags: [assignments]
+      summary: Manually create an assignment (coordinators)
+      description: Allocating from an offer locks the offer row; over-allocation is rejected with `409 over_allocation` and the remaining quantity, also under concurrent requests. The request must be verified (or already assigned/in progress).
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AssignmentCreate" } } }
+      responses:
+        "201": { $ref: "#/components/responses/Assignment" }
+        "200": { $ref: "#/components/responses/Assignment" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/assignments/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [assignments]
+      summary: Get an assignment
+      responses:
+        "200": { $ref: "#/components/responses/Assignment" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [assignments]
+      summary: Update instructions/grants (coordinators) or ETA/handover (assigned volunteer)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AssignmentUpdate" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Assignment" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/assignments/{id}/status:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [assignments]
+      summary: Change assignment status
+      description: Declined, unable_to_complete and cancelled require a reason and release allocated quantity. Delivery never resolves the request automatically.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AssignmentStatusChange" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Assignment" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/assignments/{id}/protected:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [assignments]
+      summary: Reveal protected details granted for this assignment (audited)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "200": { description: Granted details, content: { application/json: { schema: { $ref: "#/components/schemas/AssignmentProtected" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v1/volunteers:
+    get:
+      tags: [volunteers]
+      summary: Volunteers with availability (coordinators)
+      responses:
+        "200":
+          description: Volunteers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Volunteer" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/volunteers/{id}/availability:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [volunteers]
+      summary: Set a volunteer's availability (organization managers)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { $ref: "#/components/requestBodies/Availability" }
+      responses:
+        "204": { description: Updated }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v1/dashboard:
+    get:
+      tags: [dashboard]
+      summary: Operational overview (queues for coordinators, aggregates for admins)
+      responses:
+        "200": { description: Overview, content: { application/json: { schema: { $ref: "#/components/schemas/Dashboard" } } } }
+
+  /api/v1/exports/requests.csv:
+    get:
+      tags: [exports]
+      summary: Non-personal request report (organization managers, audited)
+      parameters:
+        - { name: from, in: query, schema: { type: string }, description: YYYY-MM-DD or RFC 3339 }
+        - { name: to, in: query, schema: { type: string } }
+      responses:
+        "200": { description: CSV, content: { text/csv: { schema: { type: string } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/exports/summary.json:
+    get:
+      tags: [exports]
+      summary: Aggregated summary report (organization managers, audited)
+      parameters:
+        - { name: from, in: query, schema: { type: string } }
+        - { name: to, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Summary, content: { application/json: { schema: { type: object } } } }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v1/sync/push:
+    post:
+      tags: [sync]
+      summary: Push queued offline operations (idempotent by op_id)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SyncPush" } } }
+      responses:
+        "200": { description: Per-operation results, content: { application/json: { schema: { $ref: "#/components/schemas/SyncPushResult" } } } }
+  /api/v1/sync/pull:
+    get:
+      tags: [sync]
+      summary: Pull entities for offline caching
+      parameters:
+        - { name: since, in: query, schema: { type: string, format: date-time }, description: Previous server_time; omit for a full refresh }
+      responses:
+        "200": { description: Entities, content: { application/json: { schema: { $ref: "#/components/schemas/SyncPull" } } } }
+
+  /api/v1/admin/settings:
+    put:
+      tags: [admin]
+      summary: Update instance settings (partial)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SettingsUpdate" } } }
+      responses:
+        "200": { description: Settings, content: { application/json: { schema: { $ref: "#/components/schemas/Settings" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/categories:
+    get:
+      tags: [admin]
+      summary: All categories including disabled ones
+      responses:
+        "200": { description: Categories, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Category" } } } } } } }
+  /api/v1/admin/categories/{code}:
+    parameters:
+      - { name: code, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [admin]
+      summary: Relabel, reorder, enable or disable a category
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                label: { type: string, maxLength: 60 }
+                description: { type: string, maxLength: 300 }
+                enabled: { type: boolean }
+                sort_order: { type: integer }
+      responses:
+        "200": { description: Category, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+  /api/v1/admin/users:
+    get:
+      tags: [admin]
+      summary: List local accounts
+      responses:
+        "200": { description: Users, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/User" } } } } } } }
+    post:
+      tags: [admin]
+      summary: Create an account with a one-time temporary password
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, display_name, roles]
+              properties:
+                username: { type: string, pattern: "^[a-z0-9][a-z0-9._@\\-]{2,63}$" }
+                display_name: { type: string, maxLength: 80 }
+                roles: { type: array, items: { $ref: "#/components/schemas/Role" }, minItems: 1 }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+                  temporary_password: { type: string }
+        "422": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/users/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [admin]
+      summary: Change display name, roles, active state or unlock
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                display_name: { type: string }
+                roles: { type: array, items: { $ref: "#/components/schemas/Role" } }
+                is_active: { type: boolean }
+                unlock: { type: boolean }
+      responses:
+        "200": { description: User, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/users/{id}/reset-password:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [admin]
+      summary: Reset a password (no e-mail involved); ends all sessions of the user
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "200": { description: Temporary password, content: { application/json: { schema: { type: object, properties: { temporary_password: { type: string } } } } } }
+  /api/v1/admin/audit:
+    get:
+      tags: [admin]
+      summary: System audit log (newest first)
+      parameters:
+        - { name: action, in: query, schema: { type: string } }
+        - { name: entity_type, in: query, schema: { type: string } }
+        - { name: before_id, in: query, schema: { type: integer } }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200": { description: Events, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } } } } } } }
+  /api/v1/admin/audit/verify:
+    get:
+      tags: [admin]
+      summary: Verify the audit hash chain
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  events_checked: { type: integer }
+                  first_broken_id: { type: integer }
+                  problem: { type: string }
+  /api/v1/admin/retention:
+    get:
+      tags: [admin]
+      summary: Preview records due for retention redaction
+      responses:
+        "200": { $ref: "#/components/responses/Retention" }
+  /api/v1/admin/retention/apply:
+    post:
+      tags: [admin]
+      summary: Apply retention (irreversible redaction of personal data)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [confirm], properties: { confirm: { type: boolean, const: true } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/Retention" }
+  /api/v1/admin/records/delete:
+    post:
+      tags: [admin]
+      summary: Delete (redact) a record by reference, with reason
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [entity_type, reference, reason]
+              properties:
+                entity_type: { type: string, enum: [request, offer] }
+                reference: { type: string }
+                reason: { type: string, minLength: 5, maxLength: 1000 }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/demo:
+    get:
+      tags: [admin]
+      summary: Demo scenarios (only seedable when RELIEFMESH_ALLOW_DEMO_SEED=true)
+      responses:
+        "200": { description: Demo info, content: { application/json: { schema: { type: object } } } }
+  /api/v1/admin/demo/seed:
+    post:
+      tags: [admin]
+      summary: Load a fictional exercise scenario
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [scenario], properties: { scenario: { type: string, enum: [flood, shelter, power-outage] } } } } }
+      responses:
+        "204": { description: Loaded }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-rm_session
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+    Offset: { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+    CSRF: { name: X-CSRF-Token, in: header, required: true, schema: { type: string } }
+  requestBodies:
+    Reason:
+      required: true
+      content: { application/json: { schema: { type: object, additionalProperties: false, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 1000 } } } } }
+    Availability:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [availability]
+            properties:
+              availability: { type: string, enum: [available, limited, unavailable] }
+              availability_note: { type: string, maxLength: 200 }
+    Note:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [body]
+            properties:
+              client_id: { type: string, format: uuid }
+              body: { type: string, minLength: 1, maxLength: 4000 }
+              visibility: { type: string, enum: [internal, responders, shared] }
+              is_sensitive: { type: boolean }
+  responses:
+    Error:
+      description: Error
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Session:
+      description: Session
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              user: { $ref: "#/components/schemas/Me" }
+              csrf_token: { type: string }
+    Request:
+      description: Request
+      content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } }
+    Offer:
+      description: Offer
+      content: { application/json: { schema: { $ref: "#/components/schemas/Offer" } } }
+    Assignment:
+      description: Assignment
+      content: { application/json: { schema: { $ref: "#/components/schemas/Assignment" } } }
+    Note:
+      description: Note
+      content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } }
+    NoteList:
+      description: Notes
+      content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Note" } } } } } }
+    Retention:
+      description: Retention preview/result
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              retention_days: { type: integer }
+              cutoff: { type: string, format: date-time }
+              requests: { type: integer }
+              offers: { type: integer }
+  schemas:
+    Health:
+      type: object
+      properties:
+        status: { type: string }
+        version: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, examples: [validation_failed, forbidden, not_found, invalid_transition, over_allocation, version_conflict, csrf_invalid] }
+            message: { type: string }
+            fields: { type: object, additionalProperties: { type: string } }
+            details: { type: object }
+            request_id: { type: string }
+    Role: { type: string, enum: [requester, volunteer, coordinator, organization_manager, admin] }
+    Urgency: { type: string, enum: [critical, high, normal, low] }
+    RequestStatus:
+      type: string
+      enum: [draft, submitted, under_review, verified, assigned, in_progress, partially_resolved, resolved, cancelled, expired, duplicate]
+    OfferStatus:
+      type: string
+      enum: [draft, available, partially_allocated, fully_allocated, paused, expired, cancelled]
+    AssignmentStatus:
+      type: string
+      enum: [proposed, accepted, declined, in_progress, delivered, partially_delivered, unable_to_complete, cancelled]
+    Me:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        display_name: { type: string }
+        roles: { type: array, items: { $ref: "#/components/schemas/Role" } }
+        capabilities: { type: array, items: { type: string } }
+        must_change_password: { type: boolean }
+        availability: { type: string }
+        availability_note: { type: string }
+        organization: { type: object, properties: { id: { type: string, format: uuid }, name: { type: string } } }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        display_name: { type: string }
+        roles: { type: array, items: { $ref: "#/components/schemas/Role" } }
+        is_active: { type: boolean }
+        must_change_password: { type: boolean }
+        locked: { type: boolean }
+        availability: { type: string }
+        last_login_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    Volunteer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        availability: { type: string, enum: [available, limited, unavailable] }
+        availability_note: { type: string }
+        active_assignments: { type: integer }
+    Category:
+      type: object
+      properties:
+        code: { type: string }
+        label: { type: string }
+        description: { type: string }
+        is_sensitive: { type: boolean }
+        enabled: { type: boolean }
+        sort_order: { type: integer }
+    Settings:
+      type: object
+      properties:
+        instance_name: { type: string }
+        emergency_notice: { type: string }
+        critical_urgency_notice: { type: string }
+        medicine_privacy_notice: { type: string }
+        exercise_mode: { type: boolean }
+        exercise_label: { type: string }
+        approx_location_decimals: { type: integer, minimum: 0, maximum: 3 }
+        retention_days_closed: { type: integer }
+        default_request_expiry_hours: { type: integer }
+        allow_medicine_free_text: { type: boolean }
+        volunteer_access_requires_grant: { type: boolean }
+        updated_at: { type: string, format: date-time }
+    SettingsUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        instance_name: { type: string, maxLength: 80 }
+        emergency_notice: { type: string, minLength: 10, maxLength: 1000 }
+        critical_urgency_notice: { type: string, minLength: 10, maxLength: 1500 }
+        medicine_privacy_notice: { type: string, minLength: 10, maxLength: 1500 }
+        exercise_mode: { type: boolean }
+        exercise_label: { type: string, maxLength: 120 }
+        approx_location_decimals: { type: integer, minimum: 0, maximum: 3 }
+        retention_days_closed: { type: integer, minimum: 1, maximum: 3650 }
+        default_request_expiry_hours: { type: integer, minimum: 1, maximum: 8760 }
+        allow_medicine_free_text: { type: boolean }
+        volunteer_access_requires_grant: { type: boolean }
+    ClientSettings:
+      type: object
+      properties:
+        settings: { $ref: "#/components/schemas/Settings" }
+        categories: { type: array, items: { $ref: "#/components/schemas/Category" } }
+    LocationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        mode: { type: string, enum: [none, area_only, approximate, protected_exact] }
+        area_label: { type: string, maxLength: 160 }
+        lat: { type: [number, "null"], minimum: -90, maximum: 90, description: Rounded by the server to the instance precision }
+        lon: { type: [number, "null"], minimum: -180, maximum: 180 }
+        exact:
+          type: object
+          additionalProperties: false
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            address: { type: string, maxLength: 300 }
+            directions: { type: string, maxLength: 500 }
+        keep_exact: { type: boolean }
+    LocationView:
+      type: object
+      properties:
+        mode: { type: string }
+        area_label: { type: string }
+        approx_lat: { type: [number, "null"] }
+        approx_lon: { type: [number, "null"] }
+        precision_decimals: { type: [integer, "null"] }
+        has_exact: { type: boolean }
+    ContactInput:
+      type: object
+      additionalProperties: false
+      properties:
+        method: { type: string, enum: [none, phone, messenger, email, in_person, via_shelter_desk, other] }
+        visibility: { type: string, enum: [none, coordinators_only, assigned_responders] }
+        details: { type: string, maxLength: 300 }
+        keep_details: { type: boolean }
+    RequestCreate:
+      type: object
+      additionalProperties: false
+      required: [category, urgency]
+      properties:
+        client_id: { type: string, format: uuid }
+        category: { type: string }
+        urgency: { $ref: "#/components/schemas/Urgency" }
+        title: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 4000 }
+        estimated_people_affected: { type: [integer, "null"], minimum: 0 }
+        requested_quantity: { type: [integer, "null"], minimum: 0 }
+        requested_unit: { type: string, maxLength: 40 }
+        requested_by_time: { type: [string, "null"], format: date-time }
+        location: { $ref: "#/components/schemas/LocationInput" }
+        accessibility_notes: { type: string, maxLength: 1000 }
+        contact: { $ref: "#/components/schemas/ContactInput" }
+        sensitive_data_flag: { type: boolean }
+        requires_formal_authorization: { type: boolean }
+        tags: { type: array, items: { type: string }, maxItems: 10 }
+        submit: { type: boolean, default: true }
+        emergency_notice_acknowledged: { type: boolean }
+        client_created_at: { type: string, format: date-time }
+    RequestUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        version: { type: integer }
+        category: { type: string }
+        urgency: { $ref: "#/components/schemas/Urgency" }
+        title: { type: string }
+        description: { type: string }
+        estimated_people_affected: { type: [integer, "null"] }
+        requested_quantity: { type: [integer, "null"] }
+        requested_unit: { type: string }
+        requested_by_time: { type: [string, "null"], format: date-time }
+        location: { $ref: "#/components/schemas/LocationInput" }
+        accessibility_notes: { type: string }
+        contact: { $ref: "#/components/schemas/ContactInput" }
+        sensitive_data_flag: { type: boolean }
+        requires_formal_authorization: { type: boolean }
+        emergency_notice_acknowledged: { type: boolean }
+        review_status: { type: string, enum: [pending, in_review, reviewed, needs_information] }
+        verification_level: { type: string, enum: [unverified, self_reported, coordinator_confirmed, field_confirmed] }
+        assigned_team: { type: string }
+        assigned_user_id: { type: [string, "null"], format: uuid }
+        expiry_at: { type: [string, "null"], format: date-time }
+        tags: { type: array, items: { type: string } }
+    RequestStatusChange:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/RequestStatus" }
+        reason: { type: string, maxLength: 1000 }
+        resolution_summary: { type: string, maxLength: 2000 }
+        duplicate_of_reference: { type: string }
+        cancel_active_assignments: { type: boolean }
+        version: { type: integer }
+    Permissions:
+      type: object
+      properties:
+        can_edit: { type: boolean }
+        can_edit_coordinator_fields: { type: boolean }
+        allowed_statuses: { type: array, items: { type: string } }
+        can_reopen: { type: boolean }
+        can_reveal_protected: { type: boolean }
+        can_assign: { type: boolean }
+        note_visibilities: { type: array, items: { type: string } }
+    Request:
+      type: object
+      description: Role-specific projection. Fields such as created_by, tags, review_status or assigned_user are omitted for viewers who may not see them.
+      properties:
+        id: { type: string, format: uuid }
+        client_id: { type: string, format: uuid }
+        reference: { type: string, examples: [RM-2026-0001042] }
+        status: { $ref: "#/components/schemas/RequestStatus" }
+        category: { type: string }
+        urgency: { $ref: "#/components/schemas/Urgency" }
+        title: { type: string }
+        description: { type: string }
+        details_redacted: { type: boolean }
+        estimated_people_affected: { type: [integer, "null"] }
+        requested_quantity: { type: [integer, "null"] }
+        requested_unit: { type: string }
+        requested_by_time: { type: [string, "null"], format: date-time }
+        location: { $ref: "#/components/schemas/LocationView" }
+        accessibility_notes: { type: string }
+        contact_method: { type: string }
+        contact_visibility: { type: string }
+        has_contact_details: { type: boolean }
+        sensitive_data_flag: { type: boolean }
+        requires_formal_authorization: { type: boolean }
+        review_status: { type: string }
+        verification_level: { type: string }
+        assigned_team: { type: string }
+        assigned_user: { $ref: "#/components/schemas/UserRef" }
+        responders_assigned: { type: boolean }
+        resolution_summary: { type: string }
+        closed_at: { type: [string, "null"], format: date-time }
+        expiry_at: { type: [string, "null"], format: date-time }
+        tags: { type: array, items: { type: string } }
+        duplicate_of: { type: object, properties: { id: { type: string }, reference: { type: string } } }
+        created_by: { $ref: "#/components/schemas/UserRef" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer }
+        redacted: { type: boolean }
+        viewer_relation: { type: string, enum: [coordinator, owner, assigned_volunteer] }
+        permissions: { $ref: "#/components/schemas/Permissions" }
+    RequestList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Request" } }
+        has_more: { type: boolean }
+    RequestProtected:
+      type: object
+      properties:
+        contact: { type: object, properties: { method: { type: string }, details: { type: string } } }
+        exact_location: { type: object, properties: { lat: { type: number }, lon: { type: number }, address: { type: string }, directions: { type: string } } }
+        fields: { type: array, items: { type: string } }
+    UserRef:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+    TimelineEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        occurred_at: { type: string, format: date-time }
+        action: { type: string }
+        entity_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        from_status: { type: string }
+        to_status: { type: string }
+        reason: { type: string }
+        metadata: { type: object }
+        actor:
+          type: object
+          properties:
+            label: { type: string }
+            display_name: { type: string }
+            user_id: { type: string }
+            is_you: { type: boolean }
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        occurred_at: { type: string, format: date-time }
+        organization_id: { type: string }
+        actor_user_id: { type: string }
+        actor_roles: { type: array, items: { type: string } }
+        action: { type: string }
+        entity_type: { type: string }
+        entity_id: { type: string }
+        request_id: { type: string }
+        from_status: { type: string }
+        to_status: { type: string }
+        reason: { type: string }
+        metadata: { type: object }
+        visibility: { type: string, enum: [shared, operational, internal, system] }
+    Note:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        visibility: { type: string, enum: [internal, responders, shared] }
+        is_sensitive: { type: boolean }
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+        redacted: { type: boolean }
+        author: { type: object, properties: { label: { type: string }, display_name: { type: string }, is_you: { type: boolean } } }
+    OfferCreate:
+      type: object
+      additionalProperties: false
+      required: [category, title, quantity_available]
+      properties:
+        client_id: { type: string, format: uuid }
+        category: { type: string }
+        title: { type: string, minLength: 3, maxLength: 120 }
+        description: { type: string, maxLength: 4000 }
+        quantity_available: { type: integer, minimum: 0 }
+        unit: { type: string, maxLength: 40 }
+        availability_start: { type: [string, "null"], format: date-time }
+        availability_end: { type: [string, "null"], format: date-time }
+        pickup_or_delivery_mode: { type: string, enum: [pickup, delivery, either, on_site] }
+        location: { $ref: "#/components/schemas/LocationInput" }
+        accessibility_notes: { type: string, maxLength: 1000 }
+        restrictions: { type: string, maxLength: 1000 }
+        contact: { $ref: "#/components/schemas/ContactInput" }
+        tags: { type: array, items: { type: string } }
+        publish: { type: boolean, default: true }
+        client_created_at: { type: string, format: date-time }
+    OfferUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        version: { type: integer }
+        category: { type: string }
+        title: { type: string }
+        description: { type: string }
+        quantity_available: { type: integer }
+        unit: { type: string }
+        availability_start: { type: [string, "null"], format: date-time }
+        availability_end: { type: [string, "null"], format: date-time }
+        pickup_or_delivery_mode: { type: string }
+        location: { $ref: "#/components/schemas/LocationInput" }
+        accessibility_notes: { type: string }
+        restrictions: { type: string }
+        contact: { $ref: "#/components/schemas/ContactInput" }
+        verification_level: { type: string }
+        tags: { type: array, items: { type: string } }
+    Offer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string, examples: [OF-2026-0000012] }
+        status: { $ref: "#/components/schemas/OfferStatus" }
+        category: { type: string }
+        title: { type: string }
+        description: { type: string }
+        quantity_available: { type: integer }
+        unit: { type: string }
+        assigned_quantity: { type: integer }
+        remaining_quantity: { type: integer, minimum: 0 }
+        availability_start: { type: [string, "null"], format: date-time }
+        availability_end: { type: [string, "null"], format: date-time }
+        pickup_or_delivery_mode: { type: string }
+        location: { $ref: "#/components/schemas/LocationView" }
+        accessibility_notes: { type: string }
+        restrictions: { type: string }
+        contact_method: { type: string }
+        contact_visibility: { type: string }
+        has_contact_details: { type: boolean }
+        verification_level: { type: string }
+        tags: { type: array, items: { type: string } }
+        created_by: { $ref: "#/components/schemas/UserRef" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer }
+        viewer_relation: { type: string }
+        permissions: { type: object }
+    OfferList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Offer" } }
+        has_more: { type: boolean }
+    AssignmentCreate:
+      type: object
+      additionalProperties: false
+      required: [request_id]
+      properties:
+        client_id: { type: string, format: uuid }
+        request_id: { type: string, format: uuid }
+        offer_id: { type: [string, "null"], format: uuid }
+        volunteer_user_id: { type: [string, "null"], format: uuid }
+        team_label: { type: string, maxLength: 120 }
+        quantity_assigned: { type: integer, minimum: 0 }
+        unit: { type: string }
+        instructions: { type: string, maxLength: 2000, description: Free-text operational notes only. No routing, no safety claims. }
+        protected_contact_access_granted: { type: boolean }
+        pickup_location_access_granted: { type: boolean }
+        destination_location_access_granted: { type: boolean }
+        eta_text: { type: string, maxLength: 120 }
+    AssignmentUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        version: { type: integer }
+        instructions: { type: string }
+        protected_contact_access_granted: { type: boolean }
+        pickup_location_access_granted: { type: boolean }
+        destination_location_access_granted: { type: boolean }
+        eta_text: { type: string }
+        handover_status: { type: string, enum: [not_started, handed_over, received, not_applicable] }
+        handover_notes: { type: string }
+    AssignmentStatusChange:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/AssignmentStatus" }
+        reason: { type: string }
+        completion_evidence_type:
+          type: string
+          enum: [coordinator_confirmation, requester_confirmation, volunteer_confirmation, inventory_handover_record, no_evidence]
+        completion_evidence_reference: { type: string, maxLength: 200 }
+        handover_status: { type: string }
+        handover_notes: { type: string }
+        eta_text: { type: string }
+        version: { type: integer }
+    Assignment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        request_id: { type: string, format: uuid }
+        offer_id: { type: [string, "null"], format: uuid }
+        volunteer: { $ref: "#/components/schemas/UserRef" }
+        team_label: { type: string }
+        assigned_by: { $ref: "#/components/schemas/UserRef" }
+        assigned_at: { type: string, format: date-time }
+        status: { $ref: "#/components/schemas/AssignmentStatus" }
+        quantity_assigned: { type: integer }
+        unit: { type: string }
+        instructions: { type: string }
+        protected_contact_access_granted: { type: boolean }
+        pickup_location_access_granted: { type: boolean }
+        destination_location_access_granted: { type: boolean }
+        eta_text: { type: string }
+        accepted_at: { type: [string, "null"], format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        handover_status: { type: string }
+        handover_notes: { type: string }
+        completion_evidence_type: { type: string }
+        completion_evidence_reference: { type: string }
+        cancellation_reason: { type: string }
+        version: { type: integer }
+        request: { type: object }
+        offer: { type: [object, "null"] }
+        viewer_relation: { type: string, enum: [coordinator, volunteer] }
+        permissions: { type: object }
+    AssignmentList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Assignment" } }
+        has_more: { type: boolean }
+    AssignmentProtected:
+      type: object
+      properties:
+        destination_contact: { type: object }
+        destination_location: { type: object }
+        pickup_location: { type: object }
+        fields: { type: array, items: { type: string } }
+    Dashboard:
+      type: object
+      properties:
+        generated_at: { type: string, format: date-time }
+        requests: { type: object }
+        offers: { type: object }
+        assignments: { type: object }
+        volunteers: { type: object }
+        queues: { type: object, description: Only for coordinators and organization managers }
+    SyncOperation:
+      type: object
+      required: [op_id, type, payload]
+      properties:
+        op_id: { type: string, format: uuid }
+        type: { type: string, enum: [request.create, request.update, request.status, request.note, offer.create, offer.status, offer.note, assignment.status, assignment.update] }
+        entity_id: { type: string, format: uuid }
+        entity_client_id: { type: string, format: uuid }
+        payload: { type: object }
+        client_created_at: { type: string, format: date-time }
+    SyncPush:
+      type: object
+      required: [operations]
+      properties:
+        operations: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/SyncOperation" } }
+    SyncPushResult:
+      type: object
+      properties:
+        server_time: { type: string, format: date-time }
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              op_id: { type: string, format: uuid }
+              status: { type: string, enum: [applied, duplicate, conflict, rejected, retry] }
+              entity_type: { type: string }
+              entity_id: { type: string, format: uuid }
+              reference: { type: string }
+              error: { type: object }
+              entity: { type: object, description: Current server state (for conflicts and applied operations) }
+    SyncPull:
+      type: object
+      properties:
+        server_time: { type: string, format: date-time }
+        full: { type: boolean }
+        has_more: { type: boolean }
+        settings: { $ref: "#/components/schemas/ClientSettings" }
+        requests: { type: array, items: { $ref: "#/components/schemas/Request" } }
+        offers: { type: array, items: { $ref: "#/components/schemas/Offer" } }
+        assignments: { type: array, items: { $ref: "#/components/schemas/Assignment" } }
