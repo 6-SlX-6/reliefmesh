@@ -77,8 +77,7 @@ func (s *Sealer) Open(sealed []byte, aad string) ([]byte, error) {
 	if len(sealed) < 2+idLen {
 		return nil, ErrUnsealable
 	}
-	keyID := string(sealed[2 : 2+idLen])
-	aead, ok := s.aeads[keyID]
+	aead, ok := s.aeads[string(sealed[2:2+idLen])]
 	if !ok {
 		return nil, ErrUnsealable
 	}

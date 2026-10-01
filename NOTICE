@@ -1,0 +1,11 @@
+ReliefMesh
+Copyright 2026 The ReliefMesh Contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+Third-party components:
+- Icon shapes in apps/web/components/common/AppIcon.vue are adapted from
+  Feather Icons (https://feathericons.com), MIT License,
+  Copyright (c) 2013-2023 Cole Bemis.
+- Runtime dependencies are listed in apps/api/go.mod and the package.json
+  files; each is distributed under its own license.

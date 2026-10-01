@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (Go)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: reliefmesh
+          POSTGRES_PASSWORD: reliefmesh
+          POSTGRES_DB: reliefmesh_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U reliefmesh" --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: go vet
+        run: go vet ./...
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Unit, integration and contract tests
+        env:
+          RELIEFMESH_TEST_DATABASE_URL: postgres://reliefmesh:reliefmesh@localhost:5432/reliefmesh_test?sslmode=disable
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - name: Build
+        run: CGO_ENABLED=0 go build -o bin/reliefmesh-api ./cmd/reliefmesh-api
+
+  web:
+    name: Web and packages (TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm --filter @reliefmesh/web lint
+      - name: Typecheck
+        run: pnpm -r --if-present typecheck
+      - name: Unit tests
+        run: pnpm -r --if-present test
+      - name: Build
+        run: pnpm --filter @reliefmesh/web build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/.output
+          retention-days: 3
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: reliefmesh
+          POSTGRES_PASSWORD: reliefmesh
+          POSTGRES_DB: reliefmesh_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U reliefmesh" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/.output
+      - name: Install Playwright browser
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run end-to-end tests
+        working-directory: apps/web
+        env:
+          E2E_START_SERVER: "1"
+          RELIEFMESH_E2E_DATABASE_URL: postgres://reliefmesh:reliefmesh@localhost:5432/reliefmesh_e2e?sslmode=disable
+        run: pnpm exec playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
+
+  docker:
+    name: Container images build
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Validate Compose files
+        run: |
+          cd infrastructure/compose
+          cp .env.example .env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci/; s/^RELIEFMESH_SECRET_KEY=.*/RELIEFMESH_SECRET_KEY=ci-secret-ci-secret-ci-secret-ci-secret/; s/^RELIEFMESH_DATA_ENCRYPTION_KEYS=.*/RELIEFMESH_DATA_ENCRYPTION_KEYS=k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=/' .env
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.dev.yml config -q
+          docker compose -f docker-compose.demo.yml config -q

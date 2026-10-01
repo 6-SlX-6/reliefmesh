@@ -1,0 +1,45 @@
+# ReliefMesh reverse proxy (production).
+# Caddy obtains and renews TLS certificates automatically for RELIEFMESH_DOMAIN.
+{
+	email {$ACME_EMAIL}
+}
+
+{$RELIEFMESH_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# API and health endpoints.
+	@api path /api/* /healthz /readyz
+	handle @api {
+		request_body {
+			max_size 5MB
+		}
+		reverse_proxy api:8080
+	}
+
+	# Static web app (PWA).
+	handle {
+		reverse_proxy web:8080
+	}
+
+	log {
+		output stdout
+		# Do not log query strings, headers or client IPs: they could contain
+		# or reveal personal data.
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "\?.*$" "?[redacted]"
+				request>headers delete
+				request>remote_ip delete
+				request>client_ip delete
+			}
+		}
+	}
+}

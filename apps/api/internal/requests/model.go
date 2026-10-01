@@ -146,10 +146,6 @@ func LoadByClientID(ctx context.Context, q database.Querier, clientID uuid.UUID)
 	return r, err
 }
 
-func (r *Record) aad(field string) string {
-	return locations.AAD("aid_request", r.ID.String(), field)
-}
-
 // AAD returns the additional authenticated data for a protected field of
 // request id.
 func AAD(id uuid.UUID, field string) string {

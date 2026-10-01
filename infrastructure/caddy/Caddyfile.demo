@@ -1,0 +1,15 @@
+# ReliefMesh reverse proxy for the local demo (plain HTTP on localhost).
+{
+	auto_https off
+}
+
+:80 {
+	encode zstd gzip
+	@api path /api/* /healthz /readyz
+	handle @api {
+		reverse_proxy api:8080
+	}
+	handle {
+		reverse_proxy web:8080
+	}
+}

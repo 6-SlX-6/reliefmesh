@@ -1,0 +1,9 @@
+**/node_modules
+**/.nuxt
+**/.output
+**/test-results
+**/playwright-report
+.git
+infrastructure/compose/.env
+infrastructure/compose/secrets
+backups

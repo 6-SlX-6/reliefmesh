@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest an improvement for exercises or local aid coordination.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check docs/roadmap.md first. Some features are **out of scope by design** (automatic dispatch or matching, automated triage, medical features, public maps, integrations with emergency services).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which situation in an exercise or aid operation does this address? Who is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and safety impact
+      description: Does this collect or expose additional personal data? Could it be misused or mistaken for an emergency function?
+    validations:
+      required: true
+  - type: textarea
+    id: offline
+    attributes:
+      label: Offline behavior
+      description: Should this work without a connection? What happens on conflicts?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

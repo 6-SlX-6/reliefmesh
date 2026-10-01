@@ -41,3 +41,4 @@ backups/
 !.vscode/extensions.json
 *.swp
 *.log
+docs/api-reference.html
