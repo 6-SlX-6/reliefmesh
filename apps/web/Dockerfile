@@ -2,7 +2,7 @@
 # ReliefMesh web image. Build context: repository root
 #   docker build -f apps/web/Dockerfile .
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /repo
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
