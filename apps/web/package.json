@@ -1,0 +1,46 @@
+{
+  "name": "@reliefmesh/web",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --port 3000",
+    "build": "nuxt generate && node scripts/postbuild.mjs",
+    "preview": "npx serve .output/public",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@reliefmesh/api-client": "workspace:*",
+    "@reliefmesh/shared-types": "workspace:*",
+    "@reliefmesh/ui-tokens": "workspace:*",
+    "dexie": "^4.4.6",
+    "pinia": "^3.0.4"
+  },
+  "devDependencies": {
+    "@nuxtjs/tailwindcss": "^6.14.0",
+    "@pinia/nuxt": "^0.11.3",
+    "@playwright/test": "1.56.1",
+    "@vite-pwa/nuxt": "^1.1.1",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/test-utils": "^2.5.1",
+    "@vueuse/core": "^13.9.0",
+    "@vueuse/nuxt": "^13.9.0",
+    "eslint": "^9.39.0",
+    "eslint-plugin-vue": "^10.11.1",
+    "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.14.5",
+    "nuxt": "^3.21.11",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^4.1.11",
+    "vue-tsc": "^3.3.11",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1"
+  }
+}

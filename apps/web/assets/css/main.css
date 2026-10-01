@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Base styles for use under stress: large readable text, strong focus
+ * indicators, no motion for users who ask for reduced motion.
+ */
+@layer base {
+  html {
+    @apply bg-surface-sunken text-ink antialiased;
+    font-size: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply text-base;
+    min-height: 100dvh;
+  }
+  :focus-visible {
+    outline: 3px solid theme('colors.focus');
+    outline-offset: 2px;
+    box-shadow: 0 0 0 6px theme('colors.ink.DEFAULT');
+    border-radius: 4px;
+  }
+  h1 { @apply text-2xl font-bold leading-tight sm:text-3xl; }
+  h2 { @apply text-xl font-bold leading-snug; }
+  h3 { @apply text-lg font-semibold; }
+  a { @apply text-brand underline underline-offset-2; }
+  a:hover { @apply text-brand-hover; }
+  label { @apply font-semibold; }
+  input, select, textarea { @apply text-base; }
+  [hidden] { display: none !important; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex min-h-target items-center justify-center gap-2 rounded-lg border-2 px-5 py-2 text-base font-semibold no-underline transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary { @apply btn border-brand bg-brand text-brand-ink hover:bg-brand-hover hover:text-brand-ink; }
+  .btn-secondary { @apply btn border-surface-strong bg-surface text-ink hover:bg-surface-sunken hover:text-ink; }
+  .btn-danger { @apply btn border-danger bg-danger text-danger-ink hover:bg-danger-strong hover:text-danger-ink; }
+  .btn-ghost { @apply btn border-transparent bg-transparent text-brand hover:bg-brand-soft; }
+  .btn-sm { @apply min-h-[40px] px-3 py-1 text-sm; }
+  .card { @apply rounded-xl border border-surface-border bg-surface p-4 shadow-sm sm:p-5; }
+  .field-input {
+    @apply block w-full min-h-target rounded-lg border-2 border-surface-border bg-surface px-3 py-2 text-ink placeholder:text-ink-subtle focus:border-brand;
+  }
+  .field-input[aria-invalid='true'] { @apply border-danger; }
+  .field-help { @apply mt-1 text-sm text-ink-muted; }
+  .field-error { @apply mt-1 text-sm font-semibold text-danger; }
+  .choice {
+    @apply flex min-h-target cursor-pointer items-start gap-3 rounded-lg border-2 border-surface-border bg-surface p-3 hover:border-brand;
+  }
+  .choice:has(input:checked) { @apply border-brand bg-brand-soft; }
+  .choice input { @apply mt-1 h-5 w-5 shrink-0 accent-brand; }
+  .kv { @apply grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2; }
+  .kv dt { @apply text-sm font-semibold text-ink-muted; }
+  .kv dd { @apply text-base; }
+  .sr-only-focusable:not(:focus) { @apply sr-only; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+}
