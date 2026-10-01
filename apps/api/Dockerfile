@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # ReliefMesh API image: static Go binary on a distroless, non-root base.
 
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 COPY go.mod go.sum ./
