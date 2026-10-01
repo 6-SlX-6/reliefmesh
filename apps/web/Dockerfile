@@ -17,7 +17,7 @@ ARG RELIEFMESH_BUILD_REVISION
 ENV NUXT_TELEMETRY_DISABLED=1 RELIEFMESH_BUILD_REVISION=${RELIEFMESH_BUILD_REVISION}
 RUN pnpm --filter @reliefmesh/web exec nuxt prepare && pnpm --filter @reliefmesh/web build
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 LABEL org.opencontainers.image.title="reliefmesh-web" \
       org.opencontainers.image.description="ReliefMesh web app (static PWA)" \
       org.opencontainers.image.licenses="Apache-2.0" \
